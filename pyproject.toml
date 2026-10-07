@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gambit"
+version = "0.1.0"
+description = "MeerKAT array-average beam model: base beam (original mean or Zernike expansion at any resolution) with per-channel zoom/shift transformations"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "jax"]
+
+[project.urls]
+Repository = "https://github.com/MortezaPasha/GAMBIT-beam-model"
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gambit = ["data/*.npy", "data/*.npz", "data/README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
