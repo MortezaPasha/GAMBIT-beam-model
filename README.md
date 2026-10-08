@@ -64,7 +64,7 @@ is large (900 × 1024² float64 ≈ 7.5 GB). So:
   channel at a time, so memory stays at about two images.
 
 ```python
-for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=4096):
+for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=8192):
     ...   # use the (8192, 8192) beam for this channel, e.g. in imaging
 ```
 
