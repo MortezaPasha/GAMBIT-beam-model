@@ -40,9 +40,9 @@ some = model.beam(channels=[0, 100, 899])                        # by channel in
 cube = model.beam(source="zernike", resolution=256)              # all 900 channels: (900, 256, 256)
 
 # One random beam per channel, parameters drawn from the stored means / stds
-beams, (factor, shift_m, shift_l) = model.sample(channels=range(10), seed=0)
+beams, (factor, shift_l, shift_m) = model.sample(channels=range(10), seed=0)
 
-# The zoom factor and shifts themselves, at given frequencies or channels
+# The scale factor and shifts themselves, at given frequencies or channels
 factor, shift_x, shift_y = model.params(freqs=[900.0, 1284.0])            # means
 (f_m, f_s), (sx_m, sx_s), (sy_m, sy_s) = model.params(channels=range(10), std=True)
 
