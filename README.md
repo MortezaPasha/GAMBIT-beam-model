@@ -18,7 +18,6 @@ channel's parameters (JAX `map_coordinates` / `vmap`).
 
 ```bash
 pip install git+https://github.com/MortezaPasha/GAMBIT-beam-model.git
-# or, from a clone:  pip install -e ".[dev]" && pytest
 ```
 
 Dependencies: `numpy`, `jax` (64-bit mode is switched on at import).
