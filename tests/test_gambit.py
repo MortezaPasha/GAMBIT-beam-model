@@ -37,6 +37,7 @@ def model(tmp_path, monkeypatch, beam, coeffs):
     np.save(tmp_path / "transformations.npy", transformations())
     np.savez(tmp_path / "zernike_coeffs.npz", coeffs=coeffs)
     monkeypatch.setattr(gambit.meerkat, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(gambit.meerkat, "CACHE_DIR", tmp_path / "cache")
     return MeerkatModel()
 
 
@@ -121,3 +122,19 @@ def test_wrong_beam_size_rejected(tmp_path, monkeypatch, coeffs):
     monkeypatch.setattr(gambit.meerkat, "DATA_DIR", tmp_path)
     with pytest.raises(ValueError, match="128x128"):
         MeerkatModel()
+
+
+def test_iter_beams_matches_beam(model):
+    out = dict(model.iter_beams(channels=[0, 450, 899], resolution=256))
+    np.testing.assert_allclose(out[450], model.beam(channels=450, source="zernike", resolution=256),
+                               atol=1e-12)
+    assert sorted(out) == [0, 450, 899]
+
+
+def test_high_res_base_beam_saved_and_reused(model, monkeypatch):
+    first = model.base_beam("zernike", resolution=200)
+    files = list(gambit.meerkat.CACHE_DIR.glob("base_beam_zernike_200_*.npy"))
+    assert len(files) == 1
+    fresh = MeerkatModel()
+    monkeypatch.setattr(gambit.meerkat, "zernike_image", lambda *a: pytest.fail("rebuilt"))
+    np.testing.assert_array_equal(fresh.base_beam("zernike", resolution=200), first)

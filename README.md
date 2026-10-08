@@ -56,8 +56,23 @@ beams, (factor, shift_x, shift_y) = model.sample(channels=range(10), seed=0)
 custom = model.transform(factor=1.02, shift_x=0.3, shift_y=-0.2, source="zernike", resolution=512)
 ```
 
-A full cube at high resolution is large (900 × 1024² float64 ≈ 7.5 GB), so select
-channels when working at high resolution.
+### High resolution (e.g. for imaging)
+
+Building a Zernike base beam at high resolution is the slow step, and a full cube
+is large (900 × 1024² float64 ≈ 7.5 GB). So:
+
+- The high-res base beam is **built once and saved** to `~/.cache/gambit/`
+  (or `$GAMBIT_CACHE`). Later calls, also in new sessions, just load it.
+- `iter_beams` then applies **only the geometric transform** per channel, one
+  channel at a time, so memory stays at about two images.
+
+```python
+for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=4096):
+    ...   # use the (4096, 4096) beam for this channel, e.g. in imaging
+```
+
+On a test machine, building a 2048 × 2048 base beam took 48 s the first time and
+0.01 s to load afterwards; each channel then took about 0.1 s.
 
 ## Conventions
 

@@ -1,15 +1,21 @@
 """MeerKAT array-average beam model: base beam + per-channel zoom/shift transformations."""
 
+import hashlib
+import os
 from pathlib import Path
 
 import numpy as np
 
-from .transforms import zoom_and_shift
+from .transforms import zoom_and_shift, zoom_and_shift_one_jit
 from .zernike import zernike_image
 
 #: Folder inside the package holding beam_mean.npy, transformations.npy and
 #: zernike_coeffs.npz.
 DATA_DIR = Path(__file__).resolve().parent / "data"
+
+#: Where high-resolution Zernike base beams are saved after the first build.
+#: Override with the GAMBIT_CACHE environment variable.
+CACHE_DIR = Path(os.environ.get("GAMBIT_CACHE", Path.home() / ".cache" / "gambit"))
 
 #: Native (base) resolution of beam_mean and of all stored parameters, in pixels.
 NATIVE_SIZE = 128
@@ -104,8 +110,31 @@ class MeerkatModel:
                                  f'resolution ({self.native_size}); use source="zernike"')
             return self.beam_mean
         if res not in self._zernike_cache:
-            self._zernike_cache[res] = zernike_image(self.zernike_coeffs, self.native_size, res)
+            self._zernike_cache[res] = self._load_or_build_zernike(res)
         return self._zernike_cache[res]
+
+    def _zernike_cache_file(self, res):
+        tag = hashlib.sha1(self.zernike_coeffs.tobytes()).hexdigest()[:10]
+        return CACHE_DIR / f"base_beam_zernike_{res}_{tag}.npy"
+
+    def _load_or_build_zernike(self, res):
+        """Zernike base beam at `res`: read from the disk cache, or build and save it.
+
+        Building happens once per resolution (per set of coefficients); later
+        sessions just load the saved array. The file name includes a hash of the
+        coefficients, so new coefficients never reuse an old file.
+        """
+        path = self._zernike_cache_file(res)
+        if path.exists():
+            return np.load(path)
+        beam = zernike_image(self.zernike_coeffs, self.native_size, res)
+        if res != self.native_size:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(path, beam)
+            except OSError:
+                pass  # read-only home etc.: keep it in memory only
+        return beam
 
     def transform(self, factor, shift_x, shift_y, source="mean", resolution=None):
         """Base beam zoomed and shifted by explicit parameters (scalars or 1D arrays).
@@ -130,6 +159,20 @@ class MeerkatModel:
         ch = self.channels(channels, freqs)
         return self.transform(self.factor_mean[ch], self.shift_x_mean[ch],
                               self.shift_y_mean[ch], source, resolution)
+
+    def iter_beams(self, channels=None, freqs=None, source="zernike", resolution=None):
+        """Yield ``(channel, beam)`` one channel at a time.
+
+        The base beam is built (or loaded from the disk cache) once; each step only
+        applies that channel's zoom and shift, so memory stays at about two images
+        whatever the resolution and the number of channels.
+        """
+        base = self.base_beam(source, resolution)
+        s = base.shape[0] / self.native_size
+        for c in np.atleast_1d(self.channels(channels, freqs)):
+            yield int(c), zoom_and_shift_one_jit(
+                base, self.factor_mean[c], self.shift_x_mean[c] * s,
+                self.shift_y_mean[c] * s, self.order)
 
     def sample_params(self, channels=None, freqs=None, seed=None):
         """Draw (factor, shift_x, shift_y) per channel from the stored Gaussian means / stds."""

@@ -31,3 +31,8 @@ print("beam cube", cube.shape, "from", FREQS[0], "to", FREQS[-1], "MHz")
 # One random beam per channel, drawn from the stored means / stds
 beams, (factor, shift_x, shift_y) = model.sample(channels=np.arange(0, 900, 100), seed=0)
 print("sampled beams", beams.shape)
+
+# High resolution, one channel at a time: the base beam is built once (and saved
+# to ~/.cache/gambit), then only the per-channel zoom/shift is applied
+for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=1024):
+    print("channel", ch, f"{FREQS[ch]:.2f} MHz", beam.shape)

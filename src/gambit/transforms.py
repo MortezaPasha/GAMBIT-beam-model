@@ -32,6 +32,10 @@ def zoom_and_shift_one_array(in_array, factor, shift_x, shift_y, order=1):
     return map_coordinates(in_array, out_coos, order=order, mode='constant', cval=0.0)
 
 
+#: Compiled single-image version, for fast per-channel loops at high resolution.
+zoom_and_shift_one_jit = jax.jit(zoom_and_shift_one_array, static_argnums=4)
+
+
 def zoom_and_shift(in_array, factor, shift_x, shift_y, order=1):
     """Vectorized zoom+shift over the frequency axis.
 
