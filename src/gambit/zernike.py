@@ -6,12 +6,20 @@ matrix is built with one matrix product instead of a double Python loop, and
 that matplotlib is imported lazily so it is not a hard dependency.
 
 `zernike_image` evaluates a set of coefficients on an arbitrary grid that
-covers the same field of view as the native beam. At the native resolution it
-reproduces `ZernikeDecomposer.reconstruct` exactly.
+covers the same field of view as the native beam, quickly (modes grouped by m,
+Jacobi recurrence, JAX). `zernike_image_direct` is the straightforward
+reference; at the native resolution it reproduces
+`ZernikeDecomposer.reconstruct` exactly.
 """
 
+import functools
 import math
 
+import jax
+
+jax.config.update("jax_enable_x64", True)
+
+import jax.numpy as jnp
 import numpy as np
 
 fac = lambda x: math.factorial(int(x))
@@ -65,6 +73,15 @@ def unit_disk(img_shape):
     return rho, phi, mask
 
 
+def _resampled_axes(native_size, out_shape):
+    """Row (y) and column (x) unit-disk coordinates of the resampled grid."""
+    n = float(native_size)
+    ny, nx = out_shape
+    iy = (np.arange(ny) + 0.5) * n / ny - 0.5
+    ix = (np.arange(nx) + 0.5) * n / nx - 0.5
+    return (iy - n / 2) / (n / 2), (ix - n / 2) / (n / 2)
+
+
 def resampled_disk(native_size, out_shape):
     """Unit-disk coordinates of an `out_shape` grid with the native field of view.
 
@@ -74,20 +91,14 @@ def resampled_disk(native_size, out_shape):
     output pixel `k` has its centre at native index (k + 0.5) * N / N' - 0.5.
     For `out_shape == (N, N)` this is identical to `unit_disk((N, N))`.
     """
-    n = float(native_size)
-    ny, nx = out_shape
-    iy = (np.arange(ny) + 0.5) * n / ny - 0.5
-    ix = (np.arange(nx) + 0.5) * n / nx - 0.5
-    gy = (iy - n / 2) / (n / 2)
-    gx = (ix - n / 2) / (n / 2)
-    gy, gx = np.meshgrid(gy, gx, indexing="ij")
+    gy, gx = np.meshgrid(*_resampled_axes(native_size, out_shape), indexing="ij")
     rho = np.sqrt(gy**2 + gx**2)
     phi = np.arctan2(gy, gx)
     mask = rho <= 1
     return rho, phi, mask
 
 
-def zernike_image(coeffs, native_size, out_shape=None, block_pixels=1 << 18):
+def zernike_image_direct(coeffs, native_size, out_shape=None, block_pixels=1 << 18):
     """Evaluate `sum_j coeffs[j] * Z_j` on a grid of `out_shape` pixels.
 
     Parameters
@@ -103,10 +114,10 @@ def zernike_image(coeffs, native_size, out_shape=None, block_pixels=1 << 18):
         Rows are processed in blocks of about this many pixels, so memory stays
         bounded at any resolution.
 
-    Within a block the powers rho**p and the cos/sin(m*phi) factors are computed
-    once and shared by all modes; the arithmetic is otherwise that of
-    `zernike_rad` / `zernike`, so the native-resolution result equals
-    `ZernikeDecomposer.reconstruct`.
+    Direct evaluation with the factorial formula of `zernike_rad` / `zernike`
+    (powers and cos/sin factors shared within a block). At the native
+    resolution it equals `ZernikeDecomposer.reconstruct` bit for bit. Kept as
+    the reference; `zernike_image` is the fast version used by the model.
     """
     if out_shape is None:
         out_shape = (native_size, native_size)
@@ -140,6 +151,86 @@ def zernike_image(coeffs, native_size, out_shape=None, block_pixels=1 << 18):
             acc += c * R
         recon[r0:r0 + rows] = acc
     return recon * mask
+
+
+def _group_by_m(coeffs):
+    """Coefficient tables A[m, k] (cos / m >= 0) and B[m, k] (sin) for R_{m+2k}^m."""
+    groups = [(noll_to_zern(j), c) for j, c in enumerate(np.asarray(coeffs, dtype=np.float64))]
+    mmax = max(abs(m) for (n, m), _ in groups)
+    kmax = max((n - abs(m)) // 2 for (n, m), _ in groups)
+    A = np.zeros((mmax + 1, kmax + 1))
+    B = np.zeros((mmax + 1, kmax + 1))
+    for (n, m), c in groups:
+        if (n - abs(m)) % 2:
+            continue
+        (A if m >= 0 else B)[abs(m), (n - abs(m)) // 2] += c
+    used = (A != 0) | (B != 0)
+    kmax_m = np.array([max([k for k in range(kmax + 1) if used[m, k]] + [1]) for m in range(mmax + 1)])
+    return A, B, kmax_m
+
+
+@functools.partial(jax.jit, static_argnums=4)
+def _zernike_block(x, y, A, B, mmax, kmax_m):
+    """sum_m [Re(w^m) a_m(t) + Im(w^m) b_m(t)] on a block, w = x + i y, t = 2 rho^2 - 1.
+
+    Uses R_{m+2k}^m(rho) = rho^m P_k^(0,m)(2 rho^2 - 1) with the three-term Jacobi
+    recurrence, and rho^m cos(m phi) = Re(w^m), rho^m sin(m phi) = Im(w^m).
+    """
+    r2 = x * x + y * y
+    t = 2 * r2 - 1
+
+    def per_m(m, carry):
+        img, wr, wi = carry
+        mf = m.astype(jnp.float64)
+        P0 = jnp.ones_like(t)
+        P1 = 1 + (mf + 2) * (t - 1) / 2
+        a = A[m, 0] * P0 + A[m, 1] * P1
+        b = B[m, 0] * P0 + B[m, 1] * P1
+
+        def per_k(k, c):
+            P0, P1, a, b = c
+            kf = k.astype(jnp.float64)
+            cc = 2 * kf + mf
+            P2 = ((cc - 1) * (cc * (cc - 2) * t - mf * mf) * P1
+                  - 2 * (kf - 1) * (kf + mf - 1) * cc * P0) / (2 * kf * (kf + mf) * (cc - 2))
+            return P1, P2, a + A[m, k] * P2, b + B[m, k] * P2
+
+        _, _, a, b = jax.lax.fori_loop(2, kmax_m[m] + 1, per_k, (P0, P1, a, b))
+        img = img + wr * a + wi * b
+        return img, wr * x - wi * y, wr * y + wi * x
+
+    img, _, _ = jax.lax.fori_loop(0, mmax + 1, per_m,
+                                  (jnp.zeros_like(x), jnp.ones_like(x), jnp.zeros_like(x)))
+    return jnp.where(r2 <= 1, img, 0.0)
+
+
+def zernike_image(coeffs, native_size, out_shape=None, block_pixels=1 << 20):
+    """Evaluate `sum_j coeffs[j] * Z_j` on a grid of `out_shape` pixels (fast).
+
+    Same grid and basis as `zernike_image_direct`, computed faster and more
+    accurately: modes are grouped by azimuthal order m (about 40 groups for 800
+    modes), the radial polynomials come from the stable Jacobi recurrence instead
+    of the factorial sums, and the per-block sum is compiled with JAX. Rows are
+    processed in blocks of about `block_pixels` pixels to bound memory.
+    """
+    if out_shape is None:
+        out_shape = (native_size, native_size)
+    elif np.isscalar(out_shape):
+        out_shape = (int(out_shape), int(out_shape))
+    A, B, kmax_m = _group_by_m(coeffs)
+    A, B, kmax_m = jnp.asarray(A), jnp.asarray(B), jnp.asarray(kmax_m)
+    mmax = A.shape[0] - 1
+    gy, gx = _resampled_axes(native_size, out_shape)
+    out = np.empty(out_shape, dtype=np.float64)
+    rows = max(1, block_pixels // out_shape[1])
+    xx = np.broadcast_to(gx, (rows, out_shape[1]))
+    for r0 in range(0, out_shape[0], rows):
+        r1 = min(r0 + rows, out_shape[0])
+        yy = np.zeros((rows, 1))
+        yy[: r1 - r0, 0] = gy[r0:r1]   # pad the last block so every block has one shape
+        out[r0:r1] = np.asarray(_zernike_block(xx, np.broadcast_to(yy, xx.shape),
+                                               A, B, mmax, kmax_m))[: r1 - r0]
+    return out
 
 
 class ZernikeDecomposer:
