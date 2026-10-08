@@ -57,7 +57,7 @@ def test_zernike_fit_is_close(beam, coeffs):
 
 
 def test_upsampled_grid_contains_native_pixels(coeffs):
-    # With an odd factor, every third output pixel centre is a native pixel centre.
+    # With an odd scale, every third output pixel centre is a native pixel centre.
     hi = zernike_image(coeffs, N, 3 * N)
     np.testing.assert_allclose(hi[1::3, 1::3], zernike_image(coeffs, N), atol=1e-10)
 
@@ -65,7 +65,7 @@ def test_upsampled_grid_contains_native_pixels(coeffs):
 def test_identity_and_integer_shift(beam):
     np.testing.assert_allclose(zoom_and_shift_one_array(beam, 1.0, 0.0, 0.0), beam, atol=1e-12)
     out = np.asarray(zoom_and_shift_one_array(beam, 1.0, 2.0, -1.0))
-    # output(y, x) = input(y + shift_y, x + shift_x)
+    # output(y, x) = input(y + shift_m, x + shift_l)
     np.testing.assert_allclose(out[1:, :-2], beam[:-1, 2:], atol=1e-12)
 
 
@@ -150,7 +150,7 @@ def test_params_by_freq_and_channel(model):
 
 
 def test_own_params_per_channel(model):
-    own = model.beam(channels=[1, 2], factor=[1.0, 1.1], shift_x=0.5, shift_y=0.0)
+    own = model.beam(channels=[1, 2], scale=[1.0, 1.1], shift_l=0.5, shift_m=0.0)
     np.testing.assert_allclose(own[1], model.transform(1.1, 0.5, 0.0), atol=1e-12)
-    it = dict(model.iter_beams(channels=[1, 2], source="mean", factor=[1.0, 1.1], shift_x=0.5, shift_y=0.0))
+    it = dict(model.iter_beams(channels=[1, 2], source="mean", scale=[1.0, 1.1], shift_l=0.5, shift_m=0.0))
     np.testing.assert_allclose(it[2], own[1], atol=1e-12)

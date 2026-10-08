@@ -1,4 +1,4 @@
-"""MeerKAT array-average beam model: base beam + per-channel zoom/shift transformations."""
+"""MeerKAT array-average beam model: base beam + per-channel scale/shift transformations."""
 
 import hashlib
 import os
@@ -51,20 +51,20 @@ class MeerkatModel:
     """MeerKAT antenna-array average beam.
 
     There is one 128 x 128 base beam with no frequency axis (``base_beam``).
-    Frequency only selects the zoom/shift parameters: the beam at a channel is
+    Frequency only selects the scale/shift parameters: the beam at a channel is
     the base beam transformed with that channel's parameters (``beam``).
 
     The data are read from the package's data folder:
 
     - ``beam_mean.npy``: original base beam (square 2D array)
-    - ``transformations.npy``: [factor_mean, factor_std, x_shift_mean,
-      x_shift_std, y_shift_mean, y_shift_std], shape (6, 900), one column per
+    - ``transformations.npy``: [scale_mean, scale_std, shift_l_mean,
+      shift_l_std, shift_m_mean, shift_m_std], shape (6, 900), one column per
       channel of ``FREQS`` (shape (6,) is also accepted and used for every channel)
     - ``zernike_coeffs.npz``: Zernike coefficients of the base beam (Noll order)
 
     Everything is defined on the native 128 x 128 grid of beam_mean: shifts are
     in native pixels and are rescaled when another resolution is requested; the
-    zoom factor is dimensionless.
+    scale is dimensionless.
     """
 
     freqs = FREQS
@@ -79,9 +79,9 @@ class MeerkatModel:
         if t.shape != (6, len(FREQS)):
             raise ValueError(f"transformations.npy must have shape (6, {len(FREQS)}), got {t.shape}")
         self.transformations = t
-        (self.factor_mean, self.factor_std,
-         self.shift_x_mean, self.shift_x_std,
-         self.shift_y_mean, self.shift_y_std) = t
+        (self.scale_mean, self.scale_std,
+         self.shift_l_mean, self.shift_l_std,
+         self.shift_m_mean, self.shift_m_std) = t
         self.zernike_coeffs = _load_coeffs(DATA_DIR / "zernike_coeffs.npz")
         self._zernike_cache = {}
 
@@ -136,80 +136,80 @@ class MeerkatModel:
                 pass  # read-only home etc.: keep it in memory only
         return beam
 
-    def transform(self, factor, shift_x, shift_y, source="mean", resolution=None):
+    def transform(self, scale, shift_l, shift_m, source="mean", resolution=None):
         """Base beam zoomed and shifted by explicit parameters (scalars or 1D arrays).
 
         Shifts are given in native pixels and rescaled to the requested resolution.
         """
-        factor, shift_x, shift_y = np.broadcast_arrays(
-            np.asarray(factor, dtype=np.float64),
-            np.asarray(shift_x, dtype=np.float64),
-            np.asarray(shift_y, dtype=np.float64))
+        scale, shift_l, shift_m = np.broadcast_arrays(
+            np.asarray(scale, dtype=np.float64),
+            np.asarray(shift_l, dtype=np.float64),
+            np.asarray(shift_m, dtype=np.float64))
         base = self.base_beam(source, resolution)
         s = base.shape[0] / self.native_size
-        return zoom_and_shift(base, factor, shift_x * s, shift_y * s, self.order)
+        return zoom_and_shift(base, scale, shift_l * s, shift_m * s, self.order)
 
     def params(self, channels=None, freqs=None, std=False):
-        """Zoom factor and shifts of the selected channels.
+        """Scale and shifts of the selected channels.
 
-        Returns ``(factor, shift_x, shift_y)`` means, or with ``std=True``
-        ``((factor_mean, factor_std), (shift_x_mean, shift_x_std),
-        (shift_y_mean, shift_y_std))``. Shifts are in native (128-grid) pixels.
+        Returns ``(scale, shift_l, shift_m)`` means, or with ``std=True``
+        ``((scale_mean, scale_std), (shift_l_mean, shift_l_std),
+        (shift_m_mean, shift_m_std))``. Shifts are in native (128-grid) pixels.
         """
         ch = self.channels(channels, freqs)
         if std:
-            return ((self.factor_mean[ch], self.factor_std[ch]),
-                    (self.shift_x_mean[ch], self.shift_x_std[ch]),
-                    (self.shift_y_mean[ch], self.shift_y_std[ch]))
-        return self.factor_mean[ch], self.shift_x_mean[ch], self.shift_y_mean[ch]
+            return ((self.scale_mean[ch], self.scale_std[ch]),
+                    (self.shift_l_mean[ch], self.shift_l_std[ch]),
+                    (self.shift_m_mean[ch], self.shift_m_std[ch]))
+        return self.scale_mean[ch], self.shift_l_mean[ch], self.shift_m_mean[ch]
 
-    def _channel_params(self, ch, factor, shift_x, shift_y):
+    def _channel_params(self, ch, scale, shift_l, shift_m):
         """Stored means for channels `ch`, replaced by any values the caller gave."""
-        f, sx, sy = self.factor_mean[ch], self.shift_x_mean[ch], self.shift_y_mean[ch]
-        f = f if factor is None else np.broadcast_to(np.asarray(factor, dtype=np.float64), np.shape(ch))
-        sx = sx if shift_x is None else np.broadcast_to(np.asarray(shift_x, dtype=np.float64), np.shape(ch))
-        sy = sy if shift_y is None else np.broadcast_to(np.asarray(shift_y, dtype=np.float64), np.shape(ch))
-        return f, sx, sy
+        f, sl, sm = self.scale_mean[ch], self.shift_l_mean[ch], self.shift_m_mean[ch]
+        f = f if scale is None else np.broadcast_to(np.asarray(scale, dtype=np.float64), np.shape(ch))
+        sl = sl if shift_l is None else np.broadcast_to(np.asarray(shift_l, dtype=np.float64), np.shape(ch))
+        sm = sm if shift_m is None else np.broadcast_to(np.asarray(shift_m, dtype=np.float64), np.shape(ch))
+        return f, sl, sm
 
     def beam(self, channels=None, freqs=None, source="mean", resolution=None,
-             factor=None, shift_x=None, shift_y=None):
-        """Base beam transformed with the zoom/shift of the selected channels.
+             scale=None, shift_l=None, shift_m=None):
+        """Base beam transformed with the scale/shift of the selected channels.
 
         Select channels by index (`channels`) or by frequency in MHz (`freqs`,
         nearest channel); by default all 900. The stored mean parameters are used,
-        unless you pass your own `factor`, `shift_x`, `shift_y` (a scalar, or one
+        unless you pass your own `scale`, `shift_l`, `shift_m` (a scalar, or one
         value per selected channel; shifts in native pixels). Returns (res, res)
         for a single channel, otherwise (n_channels, res, res).
         """
         ch = self.channels(channels, freqs)
-        return self.transform(*self._channel_params(ch, factor, shift_x, shift_y),
+        return self.transform(*self._channel_params(ch, scale, shift_l, shift_m),
                               source, resolution)
 
     def iter_beams(self, channels=None, freqs=None, source="zernike", resolution=None,
-                   factor=None, shift_x=None, shift_y=None):
+                   scale=None, shift_l=None, shift_m=None):
         """Yield ``(channel, beam)`` one channel at a time.
 
         The base beam is built (or loaded from the disk cache) once; each step only
         applies that channel's zoom and shift, so memory stays at about two images
-        whatever the resolution and the number of channels. Own `factor`,
-        `shift_x`, `shift_y` can be given as in :meth:`beam`.
+        whatever the resolution and the number of channels. Own `scale`,
+        `shift_l`, `shift_m` can be given as in :meth:`beam`.
         """
         base = self.base_beam(source, resolution)
         s = base.shape[0] / self.native_size
         ch = np.atleast_1d(self.channels(channels, freqs))
-        f, sx, sy = self._channel_params(ch, factor, shift_x, shift_y)
+        f, sl, sm = self._channel_params(ch, scale, shift_l, shift_m)
         for i, c in enumerate(ch):
-            yield int(c), zoom_and_shift_one_jit(base, f[i], sx[i] * s, sy[i] * s, self.order)
+            yield int(c), zoom_and_shift_one_jit(base, f[i], sl[i] * s, sm[i] * s, self.order)
 
     def sample_params(self, channels=None, freqs=None, seed=None):
-        """Draw (factor, shift_x, shift_y) per channel from the stored Gaussian means / stds."""
+        """Draw (scale, shift_l, shift_m) per channel from the stored Gaussian means / stds."""
         ch = self.channels(channels, freqs)
         rng = np.random.default_rng(seed)
-        return (rng.normal(self.factor_mean[ch], self.factor_std[ch]),
-                rng.normal(self.shift_x_mean[ch], self.shift_x_std[ch]),
-                rng.normal(self.shift_y_mean[ch], self.shift_y_std[ch]))
+        return (rng.normal(self.scale_mean[ch], self.scale_std[ch]),
+                rng.normal(self.shift_l_mean[ch], self.shift_l_std[ch]),
+                rng.normal(self.shift_m_mean[ch], self.shift_m_std[ch]))
 
     def sample(self, channels=None, freqs=None, seed=None, source="mean", resolution=None):
-        """One random beam per selected channel; returns (beams, (factor, shift_x, shift_y))."""
+        """One random beam per selected channel; returns (beams, (scale, shift_l, shift_m))."""
         params = self.sample_params(channels, freqs, seed)
         return self.transform(*params, source=source, resolution=resolution), params
