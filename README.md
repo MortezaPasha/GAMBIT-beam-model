@@ -1,4 +1,5 @@
 # gambit
+** Generative Bayesian Modelling of Radio Antenna Beams **
 
 MeerKAT antenna-array average **Stokes I** beam model.
 
