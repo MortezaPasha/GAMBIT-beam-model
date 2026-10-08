@@ -65,7 +65,8 @@ for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=8192)
     ...   # use the (8192, 8192) beam for this channel, e.g. in imaging
 ```
 
-On a test machine, building a 8k × 8k base beam took less than one minute the first time and
+On a test machine (CPU, , building a 8k × 8k base beam took less than one minute the first time and
 0.01 s to load afterwards; each channel then took about 0.1 s.
+A GPU build of JAX will be faster.
 
 
