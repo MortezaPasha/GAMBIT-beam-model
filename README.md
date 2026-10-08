@@ -4,8 +4,8 @@ MeerKAT antenna-array average beam model.
 
 There is **one base beam**, 128 × 128, with no frequency axis. It comes either
 
-1. **from the original base beam mean** (`source="mean"`, 128 × 128 only), or
-2. **from its Zernike expansion** (`source="zernike"`, any resolution).
+1. **from the original base beam posterior mean** (`source="mean"`, 128 × 128 only), or
+2. **from the Zernike expansion of the base beam** (`source="zernike"`, any resolution).
 
 Frequency enters only through the transformations: for each of the 900 L-band
 channels (`FREQS = np.arange(856, 1712, 0.8359375)[:900]`, MHz),
