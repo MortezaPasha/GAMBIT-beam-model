@@ -45,7 +45,7 @@ beams, (scale, shift_l, shift_m) = model.sample(channels=range(10), seed=0)
 
 # The scale and shifts themselves, at given frequencies or channels
 scale, shift_l, shift_m = model.params(freqs=[900.0, 1284.0])            # means
-(f_m, f_s), (sl_m, sl_s), (sm_m, sm_s) = model.params(channels=range(10), std=True)
+(s_mean, s_std), (sl_mean, sl_std), (sm_mean, sm_std) = model.params(channels=range(10), std=True)
 
 # Beams at given channels with your own parameters (scalar or one value per channel)
 own = model.beam(freqs=[900.0, 1284.0], scale=[1.01, 1.03], shift_l=0.2, shift_m=-0.1)
