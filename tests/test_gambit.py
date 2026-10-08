@@ -138,3 +138,19 @@ def test_high_res_base_beam_saved_and_reused(model, monkeypatch):
     fresh = MeerkatModel()
     monkeypatch.setattr(gambit.meerkat, "zernike_image", lambda *a: pytest.fail("rebuilt"))
     np.testing.assert_array_equal(fresh.base_beam("zernike", resolution=200), first)
+
+
+def test_params_by_freq_and_channel(model):
+    t = transformations()
+    f, sx, sy = model.params(channels=[3, 7])
+    np.testing.assert_array_equal(f, t[0, [3, 7]])
+    np.testing.assert_array_equal(sy, t[4, [3, 7]])
+    (fm, fs), _, _ = model.params(freqs=FREQS[5], std=True)
+    assert fm == t[0, 5] and fs == t[1, 5]
+
+
+def test_own_params_per_channel(model):
+    own = model.beam(channels=[1, 2], factor=[1.0, 1.1], shift_x=0.5, shift_y=0.0)
+    np.testing.assert_allclose(own[1], model.transform(1.1, 0.5, 0.0), atol=1e-12)
+    it = dict(model.iter_beams(channels=[1, 2], source="mean", factor=[1.0, 1.1], shift_x=0.5, shift_y=0.0))
+    np.testing.assert_allclose(it[2], own[1], atol=1e-12)
