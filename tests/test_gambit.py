@@ -4,7 +4,7 @@ import pytest
 import gambit.meerkat
 from gambit import FREQS, MeerkatModel, ZernikeDecomposer, zernike_image, zoom_and_shift_one_array
 
-N = 48
+N = 128
 NF = len(FREQS)
 
 
@@ -112,3 +112,12 @@ def test_flattened_beam_is_reshaped(tmp_path, monkeypatch, beam, coeffs):
     m = MeerkatModel()
     np.testing.assert_array_equal(m.beam_mean, beam)
     assert m.beam(freqs=1284.0).shape == (N, N)
+
+
+def test_wrong_beam_size_rejected(tmp_path, monkeypatch, coeffs):
+    np.save(tmp_path / "beam_mean.npy", make_beam(64))
+    np.save(tmp_path / "transformations.npy", transformations())
+    np.savez(tmp_path / "zernike_coeffs.npz", coeffs=coeffs)
+    monkeypatch.setattr(gambit.meerkat, "DATA_DIR", tmp_path)
+    with pytest.raises(ValueError, match="128x128"):
+        MeerkatModel()

@@ -6,6 +6,13 @@ from gambit import FREQS, MeerkatModel
 
 model = MeerkatModel()
 
+# The base beam itself has no frequency: one 128x128 image, or its Zernike version at any size
+base = model.base_beam(source="mean")
+base_hr = model.base_beam(source="zernike", resolution=512)
+print("base beam", base.shape, "| Zernike base beam", base_hr.shape)
+
+# Frequency only selects the zoom/shift parameters applied to that base beam
+
 # 1) from the original base beam mean, one channel
 beam_from_mean = np.asarray(model.beam(freqs=1284.0, source="mean"))
 

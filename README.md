@@ -1,15 +1,17 @@
 # gambit
 
-MeerKAT antenna-array average beam model. `MeerkatModel` reconstructs the beam
-at each of the 900 L-band channels (`FREQS = np.arange(856, 1712, 0.8359375)[:900]`,
-MHz) in two ways:
+MeerKAT antenna-array average beam model.
 
-1. **From the original base beam mean** (`source="mean"`), at its native resolution.
-2. **From the Zernike expansion of the base beam** (`source="zernike"`), at any resolution.
+There is **one base beam**, 128 × 128, with no frequency axis. It comes either
 
-The base beam is then zoomed and shifted per channel with the JAX
-`map_coordinates` / `vmap` transform, using the per-channel means and standard
-deviations in `transformations.npy`.
+1. **from the original base beam mean** (`source="mean"`, 128 × 128 only), or
+2. **from its Zernike expansion** (`source="zernike"`, any resolution).
+
+Frequency enters only through the transformations: for each of the 900 L-band
+channels (`FREQS = np.arange(856, 1712, 0.8359375)[:900]`, MHz),
+`transformations.npy` holds the mean and std of the zoom factor and the x/y
+shifts. The beam at a channel is the base beam zoomed and shifted with that
+channel's parameters (JAX `map_coordinates` / `vmap`).
 
 ## Data
 
@@ -17,7 +19,7 @@ The package reads its data from `src/gambit/data/`, which is shipped with it:
 
 | File | Content |
 |---|---|
-| `beam_mean.npy` | base beam, square 2D array (native resolution) |
+| `beam_mean.npy` | base beam, 128 × 128 (the native resolution of all files) |
 | `transformations.npy` | `[factor_mean, factor_std, x_shift_mean, x_shift_std, y_shift_mean, y_shift_std]`, shape `(6, 900)`, one column per channel |
 | `zernike_coeffs.npz` | Zernike coefficients of the base beam, Noll order (key `coeffs`, or the only array in the file) |
 
@@ -37,16 +39,20 @@ from gambit import MeerkatModel, FREQS
 
 model = MeerkatModel()
 
-b1 = model.beam(freqs=1284.0, source="mean")                    # 1) original base beam, nearest channel
-b2 = model.beam(freqs=1284.0, source="zernike", resolution=1024) # 2) Zernike base beam, any resolution
+# The base beam: no frequency
+base_mean = model.base_beam(source="mean")                       # 1) original base beam, (128, 128)
+base_zern = model.base_beam(source="zernike", resolution=1024)   # 2) Zernike base beam, (1024, 1024)
 
+# Beam at a channel = base beam zoomed and shifted with that channel's mean parameters
+b1 = model.beam(freqs=1284.0, source="mean")                     # nearest channel to 1284 MHz
+b2 = model.beam(freqs=1284.0, source="zernike", resolution=1024)
+some = model.beam(channels=[0, 100, 899])                        # by channel index: (3, 128, 128)
 cube = model.beam(source="zernike", resolution=256)              # all 900 channels: (900, 256, 256)
-some = model.beam(channels=[0, 100, 899])                        # by channel index: (3, N, N)
 
-# one random beam per channel, drawn from the stored means / stds
+# One random beam per channel, parameters drawn from the stored means / stds
 beams, (factor, shift_x, shift_y) = model.sample(channels=range(10), seed=0)
 
-# explicit parameters
+# Your own parameters, no channel involved
 custom = model.transform(factor=1.02, shift_x=0.3, shift_y=-0.2, source="zernike", resolution=512)
 ```
 
@@ -58,8 +64,10 @@ channels when working at high resolution.
 - **Transform.** Output pixel `(y, x)` is read from input position
   `center + factor * ((y, x) - center) + (shift_y, shift_x)`, with
   `center = ((ny-1)/2, (nx-1)/2)`, linear interpolation, and zeros outside.
-- **Other resolutions.** `factor` is used as is. Shifts are in native pixels and
-  are multiplied by `resolution / native_size`.
+- **Native grid.** All files are defined on the 128 × 128 grid of `beam_mean`
+  (`gambit.NATIVE_SIZE`); `resolution=None` means 128.
+- **Other resolutions.** `factor` is used as is. Shifts are in native (128-grid)
+  pixels and are multiplied by `resolution / 128`.
 - **Zernike grid.** At the native size `N` the grid is the one used by
   `ZernikeDecomposer.unit_disk`, and the result equals `ZernikeDecomposer.reconstruct`
   exactly. A grid of `N'` pixels covers the same field of view. The beam is zero

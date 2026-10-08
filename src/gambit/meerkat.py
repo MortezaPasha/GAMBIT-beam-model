@@ -11,6 +11,9 @@ from .zernike import zernike_image
 #: zernike_coeffs.npz.
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
+#: Native (base) resolution of beam_mean and of all stored parameters, in pixels.
+NATIVE_SIZE = 128
+
 #: MeerKAT L-band channel frequencies in MHz (900 channels).
 FREQS = np.arange(856, 1712, 0.8359375)[:900]
 
@@ -24,24 +27,26 @@ def _load_coeffs(path):
 
 
 def _load_beam(path):
-    """Load the base beam as a square 2D array.
+    """Load the base beam as a NATIVE_SIZE x NATIVE_SIZE array.
 
-    Extra length-1 axes are dropped, and a flattened beam of N*N values is
-    reshaped to (N, N).
+    Extra length-1 axes are dropped, and a flattened beam of 128*128 values is
+    reshaped to (128, 128).
     """
     beam = np.squeeze(np.load(path)).astype(np.float64)
-    if beam.ndim == 1:
-        n = int(round(np.sqrt(beam.size)))
-        if n * n != beam.size:
-            raise ValueError(f"beam_mean.npy is 1D with {beam.size} values, not a flattened square image")
-        beam = beam.reshape(n, n)
-    if beam.ndim != 2 or beam.shape[0] != beam.shape[1]:
-        raise ValueError(f"beam_mean.npy must be a square 2D image, got shape {beam.shape}")
+    if beam.size == NATIVE_SIZE * NATIVE_SIZE:
+        beam = beam.reshape(NATIVE_SIZE, NATIVE_SIZE)
+    if beam.shape != (NATIVE_SIZE, NATIVE_SIZE):
+        raise ValueError(f"{path} should hold a {NATIVE_SIZE}x{NATIVE_SIZE} beam, "
+                         f"got shape {beam.shape}")
     return beam
 
 
 class MeerkatModel:
-    """MeerKAT antenna-array average beam, per frequency channel.
+    """MeerKAT antenna-array average beam.
+
+    There is one 128 x 128 base beam with no frequency axis (``base_beam``).
+    Frequency only selects the zoom/shift parameters: the beam at a channel is
+    the base beam transformed with that channel's parameters (``beam``).
 
     The data are read from the package's data folder:
 
@@ -51,8 +56,9 @@ class MeerkatModel:
       channel of ``FREQS`` (shape (6,) is also accepted and used for every channel)
     - ``zernike_coeffs.npz``: Zernike coefficients of the base beam (Noll order)
 
-    Shifts are in pixels of the native (beam_mean) grid; the zoom factor is
-    dimensionless.
+    Everything is defined on the native 128 x 128 grid of beam_mean: shifts are
+    in native pixels and are rescaled when another resolution is requested; the
+    zoom factor is dimensionless.
     """
 
     freqs = FREQS
@@ -60,7 +66,7 @@ class MeerkatModel:
     def __init__(self, order=1):
         self.order = order
         self.beam_mean = _load_beam(DATA_DIR / "beam_mean.npy")
-        self.native_size = self.beam_mean.shape[0]
+        self.native_size = NATIVE_SIZE
         t = np.load(DATA_DIR / "transformations.npy").astype(np.float64)
         if t.ndim == 1:
             t = np.repeat(t[:, None], len(FREQS), axis=1)
@@ -115,7 +121,7 @@ class MeerkatModel:
         return zoom_and_shift(base, factor, shift_x * s, shift_y * s, self.order)
 
     def beam(self, channels=None, freqs=None, source="mean", resolution=None):
-        """Mean beam at the selected channels.
+        """Base beam transformed with the mean zoom/shift of the selected channels.
 
         Select channels by index (`channels`) or by frequency in MHz (`freqs`,
         nearest channel); by default all 900. Returns (res, res) for a single
