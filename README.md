@@ -64,9 +64,3 @@ for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=4096)
 
 On a test machine, building a 2048 × 2048 base beam took 48 s the first time and
 0.01 s to load afterwards; each channel then took about 0.1 s.
-
-
-Users then install with `pip install git+https://github.com/MortezaPasha/GAMBIT-beam-model.git`
-(or `...gambit.git@v0.1.0`), and the data files come with the package.
-GitHub refuses files over 100 MB; if a data file is larger, use Git LFS or a
-release asset instead.
