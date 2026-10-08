@@ -1,6 +1,6 @@
 # gambit
 
-MeerKAT antenna-array average beam model.
+MeerKAT antenna-array average **Stokes I** beam model.
 
 There is **one base beam**, 128 × 128, with no frequency axis. It comes either
 
@@ -19,7 +19,7 @@ The package reads its data from `src/gambit/data/`, which is shipped with it:
 
 | File | Content |
 |---|---|
-| `beam_mean.npy` | base beam, 128 × 128 (the native resolution of all files) |
+| `beam_mean.npy` | Stokes I base beam, 128 × 128 (the native resolution of all files) |
 | `transformations.npy` | `[scale_mean, scale_std, shift_l_mean, shift_l_std, shift_m_mean, shift_m_std]`, shape `(6, 900)`, one column per channel |
 | `zernike_coeffs.npz` | Zernike coefficients of the base beam, Noll order (key `coeffs`, or the only array in the file) |
 
@@ -78,8 +78,12 @@ for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=4096)
     ...   # use the (4096, 4096) beam for this channel, e.g. in imaging
 ```
 
-On a test machine, building a 2048 × 2048 base beam took 48 s the first time and
-0.01 s to load afterwards; each channel then took about 0.1 s.
+The base beam is evaluated with the modes grouped by azimuthal order m, the
+stable Jacobi recurrence for the radial polynomials, and a JAX-compiled sum.
+On a 4-core test machine (CPU) with 800 modes, building it took 4.5 s at
+2048 × 2048 and 18 s at 4096 × 4096 (the direct formula took 48 s at 2048); a
+saved one loads in about 0.01 s, and each channel then takes about 0.1 s at 2048.
+A GPU build of JAX speeds the first build up further.
 
 ## Conventions
 
@@ -91,9 +95,13 @@ On a test machine, building a 2048 × 2048 base beam took 48 s the first time an
 - **Other resolutions.** `scale` is used as is. Shifts are in native (128-grid)
   pixels and are multiplied by `resolution / 128`.
 - **Zernike grid.** At the native size `N` the grid is the one used by
-  `ZernikeDecomposer.unit_disk`, and the result equals `ZernikeDecomposer.reconstruct`
-  exactly. A grid of `N'` pixels covers the same field of view. The beam is zero
-  outside the unit disk.
+  `ZernikeDecomposer.unit_disk`. A grid of `N'` pixels covers the same field of
+  view. The beam is zero outside the unit disk.
+- **Zernike accuracy.** `zernike_image` (fast, used by the model) agrees with the
+  direct factorial formula `zernike_image_direct` (which equals
+  `ZernikeDecomposer.reconstruct` exactly) to about 3e-8 of the peak with 800
+  modes. Checked against 50-digit arithmetic, the fast version is the more accurate
+  of the two: the factorial sums lose digits near the disk edge at high order.
 - `source="mean"` is only available at the native resolution.
 
 ## Publishing on GitHub

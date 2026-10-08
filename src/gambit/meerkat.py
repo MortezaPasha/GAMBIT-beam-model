@@ -1,4 +1,4 @@
-"""MeerKAT array-average beam model: base beam + per-channel scale/shift transformations."""
+"""MeerKAT array-average Stokes I beam model: base beam + per-channel scale/shift transformations."""
 
 import hashlib
 import os
@@ -48,7 +48,7 @@ def _load_beam(path):
 
 
 class MeerkatModel:
-    """MeerKAT antenna-array average beam.
+    """MeerKAT antenna-array average Stokes I beam.
 
     There is one 128 x 128 base beam with no frequency axis (``base_beam``).
     Frequency only selects the scale/shift parameters: the beam at a channel is
@@ -115,7 +115,7 @@ class MeerkatModel:
 
     def _zernike_cache_file(self, res):
         tag = hashlib.sha1(self.zernike_coeffs.tobytes()).hexdigest()[:10]
-        return CACHE_DIR / f"base_beam_zernike_{res}_{tag}.npy"
+        return CACHE_DIR / f"base_beam_zernike_v2_{res}_{tag}.npy"
 
     def _load_or_build_zernike(self, res):
         """Zernike base beam at `res`: read from the disk cache, or build and save it.
