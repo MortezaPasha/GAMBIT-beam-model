@@ -1,4 +1,4 @@
-"""MeerKAT array-average Stokes I beam model: base beam + per-channel scale/shift transformations."""
+"""MeerKAT beam model (array average or per antenna, per Stokes): base beam + per-channel scale/shift transformations."""
 
 import hashlib
 import os
@@ -9,7 +9,8 @@ import numpy as np
 from .transforms import zoom_and_shift, zoom_and_shift_one_jit
 from .zernike import zernike_image
 
-#: Folder inside the package holding beam_mean.npy, transformations.npy and
+#: Folder inside the package holding ``<antenna>/<stokes>/`` subfolders (e.g.
+#: ``average/I/``), each with beam_mean.npy, transformations.npy and
 #: zernike_coeffs.npz.
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -24,6 +25,8 @@ NATIVE_SIZE = 128
 FREQS = np.arange(856, 1712, 0.8359375)[:900]
 
 SOURCES = ("mean", "zernike")
+
+STOKES = ("I", "Q", "U", "V")
 
 
 def _load_coeffs(path):
@@ -47,14 +50,37 @@ def _load_beam(path):
     return beam
 
 
+#: Name of the antenna-array average beam (the ``antenna`` default).
+AVERAGE = "average"
+
+
+def _antenna_name(antenna):
+    """'average', an antenna name such as 'm012', or an antenna index (12 -> 'm012')."""
+    if isinstance(antenna, (int, np.integer)):
+        return f"m{int(antenna):03d}"
+    return str(antenna).lower()
+
+
+def available():
+    """``{antenna: [stokes, ...]}`` for the beams whose data are in the package."""
+    out = {}
+    if DATA_DIR.is_dir():
+        for a in sorted(p for p in DATA_DIR.iterdir() if p.is_dir()):
+            st = [s for s in STOKES if (a / s).is_dir()]
+            if st:
+                out[a.name] = st
+    return out
+
+
 class MeerkatModel:
-    """MeerKAT antenna-array average Stokes I beam.
+    """MeerKAT beam of one antenna or of the array average (default), for one
+    Stokes parameter (default I).
 
     There is one 128 x 128 base beam with no frequency axis (``base_beam``).
     Frequency only selects the scale/shift parameters: the beam at a channel is
     the base beam transformed with that channel's parameters (``beam``).
 
-    The data are read from the package's data folder:
+    The data are read from the package's data folder, ``data/<antenna>/<stokes>/``:
 
     - ``beam_mean.npy``: original base beam (square 2D array)
     - ``transformations.npy``: [scale_mean, scale_std, shift_l_mean,
@@ -69,11 +95,21 @@ class MeerkatModel:
 
     freqs = FREQS
 
-    def __init__(self, order=1):
+    def __init__(self, stokes="I", antenna=AVERAGE, order=1):
+        stokes = str(stokes).upper()
+        if stokes not in STOKES:
+            raise ValueError(f"stokes must be one of {STOKES}, got {stokes!r}")
+        antenna = _antenna_name(antenna)
+        data = DATA_DIR / antenna / stokes
+        if not data.is_dir():
+            raise ValueError(f"no data for antenna {antenna!r}, Stokes {stokes} in the "
+                             f"package; available: {available()}")
+        self.stokes = stokes
+        self.antenna = antenna
         self.order = order
-        self.beam_mean = _load_beam(DATA_DIR / "beam_mean.npy")
+        self.beam_mean = _load_beam(data / "beam_mean.npy")
         self.native_size = NATIVE_SIZE
-        t = np.load(DATA_DIR / "transformations.npy").astype(np.float64)
+        t = np.load(data / "transformations.npy").astype(np.float64)
         if t.ndim == 1:
             t = np.repeat(t[:, None], len(FREQS), axis=1)
         if t.shape != (6, len(FREQS)):
@@ -82,7 +118,7 @@ class MeerkatModel:
         (self.scale_mean, self.scale_std,
          self.shift_l_mean, self.shift_l_std,
          self.shift_m_mean, self.shift_m_std) = t
-        self.zernike_coeffs = _load_coeffs(DATA_DIR / "zernike_coeffs.npz")
+        self.zernike_coeffs = _load_coeffs(data / "zernike_coeffs.npz")
         self._zernike_cache = {}
 
     def channels(self, channels=None, freqs=None):
@@ -115,7 +151,7 @@ class MeerkatModel:
 
     def _zernike_cache_file(self, res):
         tag = hashlib.sha1(self.zernike_coeffs.tobytes()).hexdigest()[:10]
-        return CACHE_DIR / f"base_beam_zernike_v2_{res}_{tag}.npy"
+        return CACHE_DIR / f"base_beam_zernike_v2_{self.antenna}_{self.stokes}_{res}_{tag}.npy"
 
     def _load_or_build_zernike(self, res):
         """Zernike base beam at `res`: read from the disk cache, or build and save it.
