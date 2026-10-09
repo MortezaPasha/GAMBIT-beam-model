@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gambit"
 version = "0.1.0"
-description = "MeerKAT array-average Stokes I beam model: base beam (original mean or Zernike expansion at any resolution) with per-channel zoom/shift transformations"
+description = "MeerKAT beam model (array average or per antenna, per Stokes): base beam (original mean or Zernike expansion at any resolution) with per-channel zoom/shift transformations"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy", "jax"]
@@ -21,7 +21,7 @@ dev = ["pytest"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-gambit = ["data/*.npy", "data/*.npz", "data/README.md"]
+gambit = ["data/*/*/*.npy", "data/*/*/*.npz", "data/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
