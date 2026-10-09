@@ -68,7 +68,7 @@ is large (900 × 1024² float64 ≈ 7.5 GB). So:
   channel at a time, so memory stays at about two images.
 
 ```python
-for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=4096):
+for ch, beam in model.iter_beams(freqs=[900.0, 1284.0, 1600.0], resolution=8192):
     ...   # use the (4096, 4096) beam for this channel, e.g. in imaging
 ```
 On a 6-core test machine (CPU; 32 GBi), building it took less than one minute at 8192 × 8192 resolution; a saved one loads in about 0.01 s, and each channel then takes about 0.1 s at 8k.
