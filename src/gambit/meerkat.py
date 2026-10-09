@@ -1,4 +1,4 @@
-"""MeerKAT beam model (array average or per antenna, per Stokes): base beam + per-channel scale/shift transformations."""
+"""MeerKAT beam model (per band, antenna or array average, and Stokes): base beam + per-channel scale/shift transformations."""
 
 import hashlib
 import os
@@ -9,8 +9,8 @@ import numpy as np
 from .transforms import zoom_and_shift, zoom_and_shift_one_jit
 from .zernike import zernike_image
 
-#: Folder inside the package holding ``<antenna>/<stokes>/`` subfolders (e.g.
-#: ``average/I/``), each with beam_mean.npy, transformations.npy and
+#: Folder inside the package holding ``<band>/<antenna>/<stokes>/`` subfolders
+#: (e.g. ``L/average/I/``), each with beam_mean.npy, transformations.npy and
 #: zernike_coeffs.npz.
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
@@ -23,6 +23,10 @@ NATIVE_SIZE = 128
 
 #: MeerKAT L-band channel frequencies in MHz (900 channels).
 FREQS = np.arange(856, 1712, 0.8359375)[:900]
+
+#: Channel frequencies (MHz) of the bands built into the package. Another band
+#: (e.g. S or UHF) gives its channels in ``data/<band>/freqs.npy``.
+BANDS = {"L": FREQS}
 
 SOURCES = ("mean", "zernike")
 
@@ -61,31 +65,47 @@ def _antenna_name(antenna):
     return str(antenna).lower()
 
 
+def band_freqs(band="L"):
+    """Channel frequencies (MHz) of `band`: built in, or from data/<band>/freqs.npy."""
+    band = str(band).upper()
+    if band in BANDS:
+        return BANDS[band]
+    path = DATA_DIR / band / "freqs.npy"
+    if not path.exists():
+        raise ValueError(f"no channel frequencies for band {band!r}: add {path}")
+    return np.asarray(np.load(path), dtype=np.float64).ravel()
+
+
+def _subdirs(path):
+    return sorted(p for p in path.iterdir() if p.is_dir()) if path.is_dir() else []
+
+
 def available():
-    """``{antenna: [stokes, ...]}`` for the beams whose data are in the package."""
+    """``{band: {antenna: [stokes, ...]}}`` for the beams whose data are in the package."""
     out = {}
-    if DATA_DIR.is_dir():
-        for a in sorted(p for p in DATA_DIR.iterdir() if p.is_dir()):
-            st = [s for s in STOKES if (a / s).is_dir()]
-            if st:
-                out[a.name] = st
+    for b in _subdirs(DATA_DIR):
+        ants = {a.name: [s for s in STOKES if (a / s).is_dir()] for a in _subdirs(b)}
+        ants = {a: st for a, st in ants.items() if st}
+        if ants:
+            out[b.name] = ants
     return out
 
 
 class MeerkatModel:
-    """MeerKAT beam of one antenna or of the array average (default), for one
-    Stokes parameter (default I).
+    """MeerKAT beam in one band (default L), of one antenna or of the array
+    average (default), for one Stokes parameter (default I).
 
     There is one 128 x 128 base beam with no frequency axis (``base_beam``).
     Frequency only selects the scale/shift parameters: the beam at a channel is
     the base beam transformed with that channel's parameters (``beam``).
 
-    The data are read from the package's data folder, ``data/<antenna>/<stokes>/``:
+    The data are read from the package's data folder, ``data/<band>/<antenna>/<stokes>/``:
 
     - ``beam_mean.npy``: original base beam (square 2D array)
     - ``transformations.npy``: [scale_mean, scale_std, shift_l_mean,
-      shift_l_std, shift_m_mean, shift_m_std], shape (6, 900), one column per
-      channel of ``FREQS`` (shape (6,) is also accepted and used for every channel)
+      shift_l_std, shift_m_mean, shift_m_std], shape (6, n_channels), one column
+      per channel of the band (``self.freqs``; L band: ``FREQS``, 900 channels).
+      Shape (6,) is also accepted and used for every channel.
     - ``zernike_coeffs.npz``: Zernike coefficients of the base beam (Noll order)
 
     Everything is defined on the native 128 x 128 grid of beam_mean: shifts are
@@ -93,27 +113,28 @@ class MeerkatModel:
     scale is dimensionless.
     """
 
-    freqs = FREQS
-
-    def __init__(self, stokes="I", antenna=AVERAGE, order=1):
-        stokes = str(stokes).upper()
+    def __init__(self, stokes="I", antenna=AVERAGE, band="L", order=1):
+        stokes, band = str(stokes).upper(), str(band).upper()
         if stokes not in STOKES:
             raise ValueError(f"stokes must be one of {STOKES}, got {stokes!r}")
         antenna = _antenna_name(antenna)
-        data = DATA_DIR / antenna / stokes
+        data = DATA_DIR / band / antenna / stokes
         if not data.is_dir():
-            raise ValueError(f"no data for antenna {antenna!r}, Stokes {stokes} in the "
-                             f"package; available: {available()}")
+            raise ValueError(f"no data for band {band}, antenna {antenna!r}, Stokes {stokes} "
+                             f"in the package; available: {available()}")
         self.stokes = stokes
         self.antenna = antenna
+        self.band = band
+        self.freqs = freqs = band_freqs(band)
         self.order = order
         self.beam_mean = _load_beam(data / "beam_mean.npy")
         self.native_size = NATIVE_SIZE
         t = np.load(data / "transformations.npy").astype(np.float64)
         if t.ndim == 1:
-            t = np.repeat(t[:, None], len(FREQS), axis=1)
-        if t.shape != (6, len(FREQS)):
-            raise ValueError(f"transformations.npy must have shape (6, {len(FREQS)}), got {t.shape}")
+            t = np.repeat(t[:, None], len(freqs), axis=1)
+        if t.shape != (6, len(freqs)):
+            raise ValueError(f"transformations.npy must have shape (6, {len(freqs)}) "
+                             f"for band {band}, got {t.shape}")
         self.transformations = t
         (self.scale_mean, self.scale_std,
          self.shift_l_mean, self.shift_l_std,
@@ -122,12 +143,12 @@ class MeerkatModel:
         self._zernike_cache = {}
 
     def channels(self, channels=None, freqs=None):
-        """Channel indices: given directly, nearest to `freqs` (MHz), or all 900."""
+        """Channel indices: given directly, nearest to `freqs` (MHz), or all channels of the band."""
         if freqs is not None:
             freqs = np.asarray(freqs, dtype=np.float64)
-            return np.abs(FREQS[:, None] - freqs.ravel()[None, :]).argmin(0).reshape(freqs.shape)
+            return np.abs(self.freqs[:, None] - freqs.ravel()[None, :]).argmin(0).reshape(freqs.shape)
         if channels is None:
-            return np.arange(len(FREQS))
+            return np.arange(len(self.freqs))
         return np.asarray(channels, dtype=int)
 
     def base_beam(self, source="mean", resolution=None):
@@ -151,7 +172,7 @@ class MeerkatModel:
 
     def _zernike_cache_file(self, res):
         tag = hashlib.sha1(self.zernike_coeffs.tobytes()).hexdigest()[:10]
-        return CACHE_DIR / f"base_beam_zernike_v2_{self.antenna}_{self.stokes}_{res}_{tag}.npy"
+        return CACHE_DIR / f"base_beam_zernike_v2_{self.band}_{self.antenna}_{self.stokes}_{res}_{tag}.npy"
 
     def _load_or_build_zernike(self, res):
         """Zernike base beam at `res`: read from the disk cache, or build and save it.
