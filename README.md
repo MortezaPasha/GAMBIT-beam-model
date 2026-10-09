@@ -27,7 +27,7 @@ Dependencies: `numpy`, `jax`.
 ## Usage
 
 ```python
-from gambit import MeerkatModel, FREQS
+from gambit import MeerkatModel
 
 model = MeerkatModel(stokes="I", antenna="average", band="L")            # L-band, array average, Stokes I; later e.g.
 # MeerkatModel(stokes="Q") or MeerkatModel(antenna="m012") (or antenna=12)
