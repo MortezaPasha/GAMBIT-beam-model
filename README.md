@@ -59,7 +59,7 @@ custom = model.transform(scale=1.02, shift_l=0.3, shift_m=-0.2, source="zernike"
 
 ### High resolution (e.g. for imaging)
 
-Building a Zernike base beam at high resolution is the slow step, and a full cube
+Building a beam at high resolution is the slow step, and a full cube
 is large (900 × 1024² float64 ≈ 7.5 GB). So:
 
 - The high-res base beam is **built once and saved** to `~/.cache/gambit/`
