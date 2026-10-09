@@ -11,7 +11,7 @@ For each beam (antenna, Stokes) there is **one base beam**, 128 × 128, with no 
 
 Frequency enters only through the transformations: for each of the 900 L-band
 channels (`FREQS = np.arange(856, 1712, 0.8359375)[:900]`, MHz),
-`transformations.npy` holds the mean and std of the scale and the l/m
+`transformations.npy` holds the mean and std of the scale and the l/m centroid
 shifts. The beam at a channel is the base beam zoomed and shifted with that
 channel's parameters (JAX `map_coordinates` / `vmap`).
 
