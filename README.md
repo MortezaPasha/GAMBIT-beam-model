@@ -30,7 +30,8 @@ Dependencies: `numpy`, `jax`.
 from gambit import MeerkatModel, FREQS
 
 model = MeerkatModel(stokes="I", antenna="average", band="L")            # L-band, array average, Stokes I; later e.g.
-# MeerkatModel(stokes="Q") or MeerkatModel(antenna="m012") (or antenna=12).
+# MeerkatModel(stokes="Q") or MeerkatModel(antenna="m012") (or antenna=12)
+# MeerkatModel(band="S"). model.freqs holds the band's channel frequencies.
 # gambit.available() lists the beams that have data: {"average": ["I"]}
 
 # The base beam: no frequency
