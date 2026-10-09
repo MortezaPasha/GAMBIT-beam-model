@@ -32,7 +32,7 @@ from gambit import MeerkatModel
 model = MeerkatModel(stokes="I", antenna="average", band="L")            # L-band, array average, Stokes I; later e.g.
 # MeerkatModel(stokes="Q") or MeerkatModel(antenna="m012") (or antenna=12)
 # MeerkatModel(band="S"). model.freqs holds the band's channel frequencies.
-# gambit.available() lists the beams that have data: {"average": ["I"]}
+# gambit.available() lists the beams that have data:  {"L": {"average": ["I"]}}
 
 # The base beam: no frequency
 base_mean = model.base_beam(source="mean")                       # 1) original base beam, (128, 128)
