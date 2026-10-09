@@ -43,15 +43,10 @@ b2 = model.beam(freqs=1284.0, source="zernike", resolution=1024)
 some = model.beam(channels=[0, 100, 899])                        # by channel index: (3, 128, 128)
 cube = model.beam(source="zernike", resolution=256)              # all 900 channels: (900, 256, 256)
 
-# One random beam per channel, parameters drawn from the stored means / stds
-beams, (scale, shift_l, shift_m) = model.sample(channels=range(10), seed=0)
 
 # The scale and shifts themselves, at given frequencies or channels
 scale, shift_l, shift_m = model.params(freqs=[900.0, 1284.0])            # means
-(f_m, f_s), (sl_m, sl_s), (sm_m, sm_s) = model.params(channels=range(10), std=True)
-
-# Beams at given channels with your own parameters (scalar or one value per channel)
-own = model.beam(freqs=[900.0, 1284.0], scale=[1.01, 1.03], shift_l=0.2, shift_m=-0.1)
+(s_mean, f_std), (sl_mean, sl_std), (sm_mean, sm_std) = model.params(channels=range(10), std=True)
 
 # Your own parameters, no channel involved
 custom = model.transform(scale=1.02, shift_l=0.3, shift_m=-0.2, source="zernike", resolution=512)
