@@ -38,7 +38,7 @@ base_mean = model.base_beam(source="mean")                       # 1) original b
 base_zern = model.base_beam(source="zernike", resolution=1024)   # 2) Zernike base beam, (1024, 1024)
 
 # Beam at a channel = base beam zoomed and shifted with that channel's mean parameters
-b1 = model.beam(freqs=1284.0, source="mean")                     # nearest channel to 1284 MHz
+b1 = model.beam(freqs=1284.0, source="mean")                     # nearest channel to 1284 MHz; for accurate results, give the precise freq channel
 b2 = model.beam(freqs=1284.0, source="zernike", resolution=1024)
 some = model.beam(channels=[0, 100, 899])                        # by channel index: (3, 128, 128)
 cube = model.beam(source="zernike", resolution=256)              # all 900 channels: (900, 256, 256)
