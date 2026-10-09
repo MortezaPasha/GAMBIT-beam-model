@@ -1,7 +1,7 @@
 # gambit
 
 MeerKAT beam model, per Stokes parameter and per antenna. Included now: the
-**antenna-array average Stokes I** beam at L-band.Other bands (e.g. S, UHF), single antennas and other Stokes parameters can be
+**L-band antenna-array average Stokes I** beam.Other bands (e.g. S, UHF), single antennas and other Stokes parameters can be
 added later in the same way.
 
 For each beam (antenna, Stokes) there is **one base beam**, 128 × 128, with no frequency axis. It comes either
